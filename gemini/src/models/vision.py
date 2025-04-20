@@ -3,6 +3,8 @@ from typing import ClassVar, List, Mapping, Optional, Sequence, Any, cast
 
 from google import genai
 from google.genai.types import HttpOptions, Part, Content  # Import Content
+from io import BytesIO
+from PIL import Image
 
 from viam.logging import getLogger
 from viam.media.video import ViamImage
@@ -24,7 +26,7 @@ class Vision(ViamVisionService, EasyResource):
 
     @classmethod
     def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
-        for key in ("model_id", "api_key", "camera_name"):
+        for key in ("api_key", "camera_name"):
             if key not in config.attributes.fields:
                 raise ValueError(f"Missing Vision config attribute '{key}'")
         return []
@@ -35,7 +37,6 @@ class Vision(ViamVisionService, EasyResource):
         LOGGER.info(f"[{self.name}] reconfigure called")
         cfg = struct_to_dict(config.attributes)
         self.api_key     = cfg["api_key"]
-        self.model_id    = cfg["model_id"]
         self.camera_name = cfg["camera_name"]
         self._deps       = deps
 
@@ -45,32 +46,46 @@ class Vision(ViamVisionService, EasyResource):
         )
         LOGGER.info(f"[{self.name}] Gemini client initialized")
 
-    async def _gemini(self, parts: List[Content], **kwargs) -> str:  # Use List[Content]
-        try:
-            resp = self.client.models.generate_content(
-                model=self.model_id, contents=parts, **kwargs
-            )
-            text = resp.text.strip()
-            LOGGER.debug(
-                f"[{self.name}] Gemini raw → {text[:120]}{'...' if len(text)>120 else ''}"
-            )
-            return text
-        except Exception:
-            LOGGER.error(f"[{self.name}] Gemini call failed\n{traceback.format_exc()}")
-            raise
+    async def _gemini(self, parts: List[Part], **kwargs) -> str:
+        # use the aio‐client so we don’t block the event loop
+        resp = await self.client.aio.models.generate_content(
+            model=self.model_id,
+            contents=parts,
+            **kwargs,
+        )
+        text = resp.text.strip()
+        LOGGER.debug(f"[{self.name}] Gemini → {text!r}")
+        return text
 
     async def get_classifications(
-        self, image: ViamImage, count: int, **_
+        self, 
+        image: ViamImage, 
+        count: int, **_
     ) -> List[Classification]:
-        image_part = Part.from_data(data=image.data, mime_type="image/jpeg")
-        prompt = "Describe this image in one concise English sentence."
-        contents = [
-            Content(parts=[image_part]),  # Wrap image_part in Content
-            Content(parts=[Content.Part(text=prompt)])  # Wrap prompt in Content.Part
-        ]
+        classifications = []
 
-        description = await self._gemini(contents)
-        return [Classification(label=description, confidence=1.0)]
+        buf = BytesIO(image.data)
+        pil_img = Image.open(buf)
+
+        response = self.client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                pil_img,
+                "Describe this image in one concise English sentence."
+            ],
+        )
+
+        description = response.text.strip()
+
+        LOGGER.info(f"[{self.name}] Gemini classification → {description}")
+
+        classification = Classification()
+        classification.confidence = 1.0
+        classification.class_name= description
+        classifications.append(classification)
+
+        return classifications
+
 
     async def capture_all_from_camera(
         self,
@@ -89,24 +104,13 @@ class Vision(ViamVisionService, EasyResource):
         cam_rn = Camera.get_resource_name(camera_name)
         camera = cast(Camera, self._deps[cam_rn])
         frame  = await camera.get_image(mime_type="image/jpeg")
-        if return_image:
-            result.image = frame
 
-        # 2. generate a caption as a “classification”
-        result.classifications = await self.get_classifications(frame, 1)
-        if not return_classifications:
-            result.classifications.clear()
+        result.image = frame
 
-        # 3. stubs for detections / point clouds
-        result.detections = [] if return_detections else []
-        result.objects    = [] if return_object_point_clouds else []
-
-        # 4. Data‑Manager gating
-        if from_dm_from_extra(extra):
-            if not any(c.label for c in result.classifications):
-                raise NoCaptureToStoreError
+        result.classifications = await self.get_classifications(result.image, 1)
 
         return result
+
 
     async def get_properties(
         self,
