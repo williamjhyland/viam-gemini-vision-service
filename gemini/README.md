@@ -1,18 +1,20 @@
-# Module gemini 
+# Module gemini
 
-Provide a description of the purpose of the module and any relevant information.
+This module provides a vision service that leverages Google's Gemini multimodal LLM to generate natural language descriptions of camera images in real-time.
 
 ## Model bill:gemini:vision
 
-Provide a description of the model and any relevant information.
+A Viam vision service that captures images from a camera, processes them through Google's Gemini API, and returns detailed text descriptions of what the AI sees.
 
 ### Configuration
 The following attribute template can be used to configure this model:
 
 ```json
 {
-"attribute_1": <float>,
-"attribute_2": <string>
+  "api_key": <string>,
+  "camera_name": <string>,
+  "model": <string>,
+  "prompt": <string>
 }
 ```
 
@@ -20,31 +22,24 @@ The following attribute template can be used to configure this model:
 
 The following attributes are available for this model:
 
-| Name          | Type   | Inclusion | Description                |
-|---------------|--------|-----------|----------------------------|
-| `attribute_1` | float  | Required  | Description of attribute 1 |
-| `attribute_2` | string | Optional  | Description of attribute 2 |
+| Name          | Type   | Inclusion | Description                                         |
+|---------------|--------|-----------|-----------------------------------------------------|
+| `api_key`     | string | Required  | Your Google Gemini API key                          |
+| `camera_name` | string | Required  | Resource name of the camera to capture images from  |
+| `model`       | string | Required  | Gemini model to use (e.g., "gemini-2.0-flash")      |
+| `prompt`      | string | Required  | Text prompt to send with each image                 |
 
 #### Example Configuration
 
 ```json
 {
-  "attribute_1": 1.0,
-  "attribute_2": "foo"
+  "api_key": "YOUR_GEMINI_API_KEY",
+  "camera_name": "my-camera",
+  "model": "gemini-2.0-flash",
+  "prompt": "Describe what you see in this image"
 }
 ```
 
 ### DoCommand
 
-If your model implements DoCommand, provide an example payload of each command that is supported and the arguments that can be used. If your model does not implement DoCommand, remove this section.
-
-#### Example DoCommand
-
-```json
-{
-  "command_name": {
-    "arg1": "foo",
-    "arg2": 1
-  }
-}
-```
+This model does not currently implement DoCommand functionality.
