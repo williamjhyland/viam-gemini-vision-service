@@ -3,12 +3,12 @@
   "module_id": "bill:gemini",
   "visibility": "public",
   "url": "https://github.com/williamjhyland/viam-gemini-vision-service",
-  "description": "Modular vision service: vision",
+  "description": "A Viam vision service that captures images and processes them through Google's Gemini API.",
   "models": [
     {
       "api": "rdk:service:vision",
       "model": "bill:gemini:vision",
-      "short_description": "Provide a short (100 characters or less) description of this model here",
+      "short_description": "A Viam vision service that captures images and processes them through Google's Gemini API.",
       "markdown_link": "README.md#model-billgeminivision"
     }
   ],
