@@ -123,7 +123,7 @@ class Vision(ViamVisionService, EasyResource):
             ],
         )
         description = response.text.strip()
-        LOGGER.info(f"[{self.name}] Gemini classification → {description}")
+        LOGGER.debug(f"[{self.name}] Gemini classification → {description}")
 
         # Build and return a list of Classification messages
         classification = Classification(confidence=1.0, class_name=description)
