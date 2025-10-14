@@ -131,12 +131,12 @@ class Vision(ViamVisionService, EasyResource):
 
         return GenerateContentConfig(**config_params) if config_params else None
 
-    def _build_system_instruction(self) -> Optional[Content]:
+    def _build_system_instruction(self) -> Optional[list]:
         """
         Build system instruction Content object (if present).
         """
         if self.system_instruction:
-            return Content(parts=[Part.from_text(self.system_instruction)])
+            return [self.system_instruction]
         return None
 
     async def _gemini(self, parts: List[Part], **kwargs) -> str:
