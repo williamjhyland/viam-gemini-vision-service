@@ -232,6 +232,9 @@ class Vision(ViamVisionService, EasyResource):
         4. Package everything into CaptureAllResult
         """
         result = CaptureAllResult()
+
+        if not camera_name:
+            camera_name = self.camera_name
         
         LOGGER.info(f"[{self.name}] Attempting to get camera: {camera_name}")
         LOGGER.info(f"[{self.name}] Available dependencies: {list(self._deps.keys())}")
