@@ -3,7 +3,7 @@ from typing import ClassVar, List, Mapping, Optional, Sequence, Any, cast
 
 # Google Gemini client and helper types
 from google import genai
-from google.genai.types import HttpOptions, Part, Content
+from google.genai.types import HttpOptions, Part, Content, GenerateContentConfig, SafetySetting
 
 # For converting raw bytes into a PIL Image
 from io import BytesIO
@@ -27,7 +27,7 @@ from viam.errors import NoCaptureToStoreError
 LOGGER = getLogger(__name__)
 
 class Vision(ViamVisionService, EasyResource):
-    # Define the “model name” under which this service will register
+    # Define the "model name" under which this service will register
     MODEL: ClassVar[Model] = Model(ModelFamily("bill", "gemini"), "vision")
 
     @classmethod
@@ -38,7 +38,13 @@ class Vision(ViamVisionService, EasyResource):
            - camera_name:  the name of the camera resource to grab frames from
            - model:  which Gemini model to call (e.g. "gemini-2.0-flash")
            - prompt: the text prompt to send alongside each image
-        2. Declare a dependency on that camera resource so Viam will wire it up.
+        2. Optional fields:
+           - system_instruction: system-level instructions for the model
+           - temperature: controls randomness (0.0-2.0)
+           - top_p: nucleus sampling parameter (0.0-1.0)
+           - max_output_tokens: maximum response length
+           - safety_settings: list of safety category configurations
+        3. Declare a dependency on that camera resource so Viam will wire it up.
         """
         deps = []
         fields = config.attributes.fields
@@ -64,6 +70,7 @@ class Vision(ViamVisionService, EasyResource):
         - parse out our attributes
         - stash the camera dependency mapping
         - initialize the Gemini client
+        - configure optional parameters
         """
         LOGGER.info(f"[{self.name}] reconfigure called")
         cfg = struct_to_dict(config.attributes)
@@ -75,22 +82,88 @@ class Vision(ViamVisionService, EasyResource):
         self.prompt      = cfg["prompt"]   # e.g. "Describe this image…"
         self._deps       = deps            # mapping of dependencies
 
+        # Optional config params
+        self.system_instruction = cfg.get("system_instruction")
+        self.temperature = cfg.get("temperature")
+        self.top_p = cfg.get("top_p")
+        self.max_output_tokens = cfg.get("max_output_tokens")
+
+        # Parse safety settings
+        self.safety_settings = None
+        if "safety_settings" in cfg:
+            self.safety_settings = self._parse_safety_settings(cfg["safety_settings"])
+
         # Instantiate the Gemini client
         self.client = genai.Client(
             api_key=self.api_key,
             http_options=HttpOptions(api_version="v1"),
         )
         LOGGER.info(f"[{self.name}] Gemini client initialized")
+    
+    def _parse_safety_settings(self, settings_list: List[dict]) -> List[SafetySetting]:
+        """
+        Parse safety settings to Gemini SafetySetting objects.
+        """
+        safety_settings = []
+        for setting in settings_list:
+            if "category" in setting and "threshold" in setting:
+                safety_settings.append(
+                    SafetySetting(
+                        category=setting["category"],
+                        threshold=setting["threshold"]
+                    )
+                )
+
+        return safety_settings
+    
+    def _build_generation_config(self) -> Optional[GenerateContentConfig]:
+        """
+        Build GenerateContentConfig from optional parameters (if present).
+        """
+        config_params = {}
+
+        if self.temperature is not None:
+            config_params["temperature"] = self.temperature
+        if self.top_p is not None:
+            config_params["top_p"] = self.top_p
+        if self.max_output_tokens is not None:
+            config_params["max_output_tokens"] = self.max_output_tokens
+
+        return GenerateContentConfig(**config_params) if config_params else None
+
+    def _build_system_instruction(self) -> Optional[Content]:
+        """
+        Build system instruction Content object (if present).
+        """
+        if self.system_instruction:
+            return Content(parts=[Part.from_text(self.system_instruction)])
+        return None
 
     async def _gemini(self, parts: List[Part], **kwargs) -> str:
         """
-        Helper that calls the async Gemini endpoint so we don’t block
-        Viam’s event loop. Returns the stripped text result.
+        Helper that calls the async Gemini endpoint so we don't block
+        Viam's event loop. Returns the stripped text result.
         """
+
+        call_params = {}
+
+        if self.system_instruction:
+            call_params["system_instruction"] = self._build_system_instruction()
+
+        generation_config = self._build_generation_config()
+        if generation_config:
+            call_params["config"] = generation_config
+        
+        if self.safety_settings:
+            call_params["safety_settings"] = self.safety_settings
+
+        # Merge with extra kwargs
+        call_params.update(kwargs)
+
         resp = await self.client.aio.models.generate_content(
             model=self.model,
             contents=parts,
-            **kwargs,
+            **call_params,
         )
         text = resp.text.strip()
         LOGGER.debug(f"[{self.name}] Gemini → {text!r}")
@@ -114,6 +187,19 @@ class Vision(ViamVisionService, EasyResource):
         buf = BytesIO(image.data)
         pil_img = Image.open(buf)
 
+        # Call parameters
+        call_params = {}
+
+        if self.system_instruction:
+            call_params["system_instruction"] = self._build_system_instruction()
+        
+        generation_config = self._build_generation_config()
+        if generation_config:
+            call_params["config"] = generation_config
+        
+        if self.safety_settings:
+            call_params["safety_settings"] = self.safety_settings
+
         # Send image + prompt to Gemini
         response = self.client.models.generate_content(
             model=self.model,
@@ -121,6 +207,7 @@ class Vision(ViamVisionService, EasyResource):
                 pil_img,
                 self.prompt,
             ],
+            **call_params,
         )
         description = response.text.strip()
         LOGGER.debug(f"[{self.name}] Gemini classification → {description}")
@@ -142,7 +229,7 @@ class Vision(ViamVisionService, EasyResource):
         timeout: Optional[float] = None,
     ) -> CaptureAllResult:
         """
-        Canonical ‘capture’ call:
+        Canonical 'capture' call:
         1. Resolve the named camera dependency
         2. Grab a JPEG frame
         3. Run our classification
@@ -191,7 +278,7 @@ class Vision(ViamVisionService, EasyResource):
         # Wrap prompt in a Content.Part for consistency
         contents = [
             Content(parts=[image_part]),
-            Content(parts=[Content.Part(text=prompt)]),
+            Content(parts=[Part.from_text(prompt)]),
         ]
         return await self._gemini(contents)
 
