@@ -115,6 +115,12 @@ class Vision(ViamVisionService, EasyResource):
                 )
         return safety_settings
     
+    def _build_system_instruction(self) -> Optional[Content]:
+        """Build system instruction Content object (if present)."""
+        if self.system_instruction:
+            return Content(parts=[Part.from_text(self.system_instruction)])
+        return None
+    
     def _build_generation_config(self) -> Optional[GenerateContentConfig]:
         """
         Build GenerateContentConfig from optional parameters (if present).
@@ -122,8 +128,6 @@ class Vision(ViamVisionService, EasyResource):
         """
         config_params = {}
 
-        if self.system_instruction:
-            config_params["system_instruction"] = [self.system_instruction]
         if self.temperature is not None:
             config_params["temperature"] = self.temperature
         if self.top_p is not None:
@@ -133,20 +137,15 @@ class Vision(ViamVisionService, EasyResource):
 
         return GenerateContentConfig(**config_params) if config_params else None
 
-    def _build_system_instruction(self) -> Optional[Content]:
-        """
-        Build system instruction Content object (if present).
-        """
-        if self.system_instruction:
-            return Content(parts=[Part.from_text(self.system_instruction)])
-        return None
-
     async def _gemini(self, parts: List[Part], **kwargs) -> str:
         """
         Helper that calls the async Gemini endpoint so we don't block
         Viam's event loop. Returns the stripped text result.
         """
         call_params = {}
+
+        if self.system_instruction:
+            call_params["system_instruction"] = self._build_system_instruction()
 
         generation_config = self._build_generation_config()
         if generation_config:
@@ -186,6 +185,9 @@ class Vision(ViamVisionService, EasyResource):
         pil_img = Image.open(buf)
 
         call_params = {}
+
+        if self.system_instruction:
+            call_params["system_instruction"] = self._build_system_instruction()
     
         generation_config = self._build_generation_config()
         if generation_config:
@@ -230,9 +232,14 @@ class Vision(ViamVisionService, EasyResource):
         4. Package everything into CaptureAllResult
         """
         result = CaptureAllResult()
+        
+        LOGGER.info(f"[{self.name}] Attempting to get camera: {camera_name}")
+        LOGGER.info(f"[{self.name}] Available dependencies: {list(self._deps.keys())}")
 
         # 1. find the camera resource
         cam_rn = Camera.get_resource_name(camera_name)
+        LOGGER.info(f"[{self.name}] Looking for resource name: {cam_rn}")
+        
         camera = cast(Camera, self._deps[cam_rn])
 
         # 2. fetch an image
