@@ -113,15 +113,17 @@ class Vision(ViamVisionService, EasyResource):
                         threshold=setting["threshold"]
                     )
                 )
-
         return safety_settings
     
     def _build_generation_config(self) -> Optional[GenerateContentConfig]:
         """
         Build GenerateContentConfig from optional parameters (if present).
+        Includes system_instruction if configured.
         """
         config_params = {}
 
+        if self.system_instruction:
+            config_params["system_instruction"] = [self.system_instruction]
         if self.temperature is not None:
             config_params["temperature"] = self.temperature
         if self.top_p is not None:
@@ -144,11 +146,7 @@ class Vision(ViamVisionService, EasyResource):
         Helper that calls the async Gemini endpoint so we don't block
         Viam's event loop. Returns the stripped text result.
         """
-
         call_params = {}
-
-        if self.system_instruction:
-            call_params["system_instruction"] = self._build_system_instruction()
 
         generation_config = self._build_generation_config()
         if generation_config:
@@ -187,16 +185,12 @@ class Vision(ViamVisionService, EasyResource):
         buf = BytesIO(image.data)
         pil_img = Image.open(buf)
 
-        # Call parameters
         call_params = {}
-
-        if self.system_instruction:
-            call_params["system_instruction"] = self._build_system_instruction()
-        
+    
         generation_config = self._build_generation_config()
         if generation_config:
             call_params["config"] = generation_config
-        
+            
         if self.safety_settings:
             call_params["safety_settings"] = self.safety_settings
 
