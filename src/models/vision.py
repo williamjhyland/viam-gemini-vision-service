@@ -285,7 +285,6 @@ class Vision(ViamVisionService, EasyResource):
 
     async def get_description(self, image: ViamImage, prompt: str, **kw):
         image_part = Part.from_data(data=image.data, mime_type="image/jpeg")
-        # Wrap prompt in a Content.Part for consistency
         contents = [
             Content(parts=[image_part]),
             Content(parts=[Part.from_text(prompt)]),
