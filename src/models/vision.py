@@ -96,7 +96,7 @@ class Vision(ViamVisionService, EasyResource):
         # Instantiate the Gemini client
         self.client = genai.Client(
             api_key=self.api_key,
-            http_options=HttpOptions(api_version="v1"),
+            http_options=HttpOptions(api_version="v1alpha"),
         )
         LOGGER.info(f"[{self.name}] Gemini client initialized")
     
