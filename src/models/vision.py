@@ -195,12 +195,13 @@ class Vision(ViamVisionService, EasyResource):
         # Send image + prompt to Gemini
         response = self.client.models.generate_content(**generate_kwargs)
 
-        # Handle when response.text is None
+        # Handle cases where response.text can be None (max tokens, etc.)
         if response.text:
             description = response.text.strip()
         else:
-            description = "No response in text"
-            LOGGER.warning(f"[{self.name}] No text. Response: {response}")
+            # Fallback if blocked, empty, or error
+            description = "No response from model"
+            LOGGER.warning(f"[{self.name}] Gemini returned no text. Response: {response}")
         LOGGER.debug(f"[{self.name}] Gemini classification → {description}")
 
         # Build and return a list of Classification messages
