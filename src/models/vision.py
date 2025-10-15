@@ -105,15 +105,25 @@ class Vision(ViamVisionService, EasyResource):
         Parse safety settings to Gemini SafetySetting objects.
         """
         safety_settings = []
+        LOGGER.info(f"[{self.name}] Parsing safety_settings: {settings_list}")
+        
         for setting in settings_list:
             if "category" in setting and "threshold" in setting:
-                safety_settings.append(
-                    SafetySetting(
-                        category=setting["category"],
-                        threshold=setting["threshold"]
+                try:
+                    safety_settings.append(
+                        SafetySetting(
+                            category=setting["category"],
+                            threshold=setting["threshold"]
+                        )
                     )
-                )
-        return safety_settings
+                    LOGGER.info(f"[{self.name}] Added safety setting: {setting['category']} -> {setting['threshold']}")
+                except Exception as e:
+                    LOGGER.error(f"[{self.name}] Failed to parse safety setting {setting}: {e}")
+            else:
+                LOGGER.warning(f"[{self.name}] Skipping invalid safety setting (missing category or threshold): {setting}")
+        
+        LOGGER.info(f"[{self.name}] Parsed {len(safety_settings)} safety settings")
+        return safety_settings if safety_settings else None
     
     def _build_generate_content_config(self) -> Optional[GenerateContentConfig]:
         """
